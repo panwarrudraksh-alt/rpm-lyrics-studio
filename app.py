@@ -1,12 +1,18 @@
 import streamlit as st
 import lyricsgenius
-import time
+import os
 
 # ---------------- PAGE CONFIG ----------------
 st.set_page_config(page_title="RPM Lyrics Studio", layout="wide")
 
-# ---------------- GENIUS SETUP ----------------
-genius = lyricsgenius.Genius(st.secrets["GENIUS_API_KEY"])
+# ---------------- SAFE GENIUS SETUP ----------------
+api_key = st.secrets.get("GENIUS_API_KEY") or os.getenv("GENIUS_API_KEY")
+
+if not api_key:
+    st.error("⚠ Genius API Key not found. Please configure it in Streamlit Cloud Secrets.")
+    st.stop()
+
+genius = lyricsgenius.Genius(api_key)
 genius.skip_non_songs = True
 genius.excluded_terms = ["(Remix)", "(Live)"]
 genius.remove_section_headers = True
@@ -22,17 +28,16 @@ body {
     scroll-behavior: smooth;
 }
 
-/* Title Styling */
 .title {
-    font-size: 60px;
-    font-weight: bold;
+    font-size: 70px;
+    font-weight: 900;
     text-align: center;
+    letter-spacing: 4px;
     background: linear-gradient(90deg, #ff00cc, #ffae00);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
 }
 
-/* Button Styling */
 .stButton>button {
     background-color: #ffae00;
     color: black;
@@ -49,7 +54,6 @@ body {
     box-shadow: 0px 0px 15px #ff00cc;
 }
 
-/* Lyrics Scroll Container */
 .lyrics-box {
     height: 500px;
     overflow-y: auto;
@@ -57,16 +61,14 @@ body {
     border-radius: 20px;
     background: rgba(255,255,255,0.05);
     backdrop-filter: blur(10px);
-    animation: fadeIn 2s ease-in-out;
+    animation: fadeIn 1.5s ease-in-out;
 }
 
-/* Fade Animation */
 @keyframes fadeIn {
     from {opacity: 0;}
     to {opacity: 1;}
 }
 
-/* Equalizer */
 .equalizer {
   display: flex;
   justify-content: center;
@@ -102,7 +104,6 @@ st.markdown("### Experience lyrics in motion ✨")
 theme = st.selectbox("🎨 Choose Mood Theme",
                      ["Neon Club (Pop)", "Retro Jazz", "Rock Fire"])
 
-# Dynamic theme change
 if theme == "Retro Jazz":
     st.markdown("""
     <style>
@@ -125,35 +126,46 @@ artist_name = st.text_input("🎤 Enter Artist Name")
 
 if st.button("✨ Fetch Lyrics"):
 
-    with st.spinner("Searching the Genius universe..."):
-        song = genius.search_song(song_title, artist_name)
+    if not song_title.strip():
+        st.warning("⚠ Please enter a song name.")
+        st.stop()
 
-    if song:
-        st.success("Lyrics Found! 🎉")
+    try:
+        with st.spinner("Searching the Genius universe..."):
+            song = genius.search_song(song_title.strip(), artist_name.strip())
 
-        lyrics_lines = song.lyrics.split("\n")
+        if song and song.lyrics:
+            st.success("Lyrics Found! 🎉")
 
-        lyrics_html = "<div class='lyrics-box'>"
-        for line in lyrics_lines:
-            lyrics_html += f"<p>{line}</p>"
-        lyrics_html += "</div>"
+            lyrics_lines = song.lyrics.split("\n")
 
-        st.markdown(lyrics_html, unsafe_allow_html=True)
+            lyrics_html = "<div class='lyrics-box'>"
+            for line in lyrics_lines:
+                lyrics_html += f"<p>{line}</p>"
+            lyrics_html += "</div>"
 
-        # Equalizer Animation
-        st.markdown("""
-        <div class="equalizer">
-            <div class="bar"></div>
-            <div class="bar"></div>
-            <div class="bar"></div>
-            <div class="bar"></div>
-            <div class="bar"></div>
-        </div>
-        """, unsafe_allow_html=True)
+            st.markdown(lyrics_html, unsafe_allow_html=True)
 
-    else:
-        st.error("Song not found. Try different keywords.")
+            st.markdown("""
+            <div class="equalizer">
+                <div class="bar"></div>
+                <div class="bar"></div>
+                <div class="bar"></div>
+                <div class="bar"></div>
+                <div class="bar"></div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        else:
+            st.error("❌ Song not found. Try different keywords.")
+
+    except Exception:
+        st.error("⚠ Unable to fetch lyrics right now.")
+        st.info("Possible reasons:")
+        st.write("- API rate limit reached")
+        st.write("- Song not available on Genius")
+        st.write("- Temporary API issue")
 
 # ---------------- FOOTER ----------------
 st.markdown("---")
-st.markdown("Made by Rudraksh , Priyanshu and Mridul ")
+st.markdown("Built by Rudraksh,Priyanshu and Mridul")
