@@ -1,171 +1,86 @@
 import streamlit as st
 import lyricsgenius
-import os
+import requests
 
-# ---------------- PAGE CONFIG ----------------
-st.set_page_config(page_title="RPM Lyrics Studio", layout="wide")
+st.set_page_config(page_title="RPM Lyrics Studio", page_icon="🎵", layout="centered")
 
-# ---------------- SAFE GENIUS SETUP ----------------
-api_key = st.secrets.get("GENIUS_API_KEY") or os.getenv("GENIUS_API_KEY")
+st.title("🎵 RPM Lyrics Studio")
 
-if not api_key:
-    st.error("⚠ Genius API Key not found. Please configure it in Streamlit Cloud Secrets.")
+# -------------------------
+# Load API Key Safely
+# -------------------------
+api_key = None
+
+try:
+    api_key = st.secrets["GENIUS_API_KEY"]
+except KeyError:
+    st.error("⚠ Genius API key not found in Streamlit Secrets.")
     st.stop()
 
-genius = lyricsgenius.Genius(api_key)
-genius.skip_non_songs = True
-genius.excluded_terms = ["(Remix)", "(Live)"]
-genius.remove_section_headers = True
+# -------------------------
+# Initialize Genius Safely
+# -------------------------
+try:
+    genius = lyricsgenius.Genius(
+        api_key,
+        timeout=20,
+        retries=3,
+        sleep_time=1,
+        remove_section_headers=True,
+        skip_non_songs=True,
+        excluded_terms=["(Remix)", "(Live)"]
+    )
+    genius.verbose = False
+except Exception:
+    st.error("⚠ Failed to initialize Genius API.")
+    st.stop()
 
-# ---------------- CUSTOM CSS ----------------
-st.markdown("""
-<style>
+# -------------------------
+# User Inputs
+# -------------------------
+song_name = st.text_input("Enter Song Name")
+artist_name = st.text_input("Enter Artist Name (recommended)")
 
-body {
-    background: linear-gradient(to bottom right, #000000, #2a003f);
-    color: white;
-    font-family: 'Georgia', serif;
-    scroll-behavior: smooth;
-}
+# -------------------------
+# Fetch Lyrics
+# -------------------------
+if st.button("Get Lyrics"):
 
-.title {
-    font-size: 70px;
-    font-weight: 900;
-    text-align: center;
-    letter-spacing: 4px;
-    background: linear-gradient(90deg, #ff00cc, #ffae00);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-}
-
-.stButton>button {
-    background-color: #ffae00;
-    color: black;
-    border-radius: 30px;
-    padding: 10px 25px;
-    font-weight: bold;
-    transition: 0.3s ease-in-out;
-}
-
-.stButton>button:hover {
-    background-color: #ff00cc;
-    color: white;
-    transform: scale(1.05);
-    box-shadow: 0px 0px 15px #ff00cc;
-}
-
-.lyrics-box {
-    height: 500px;
-    overflow-y: auto;
-    padding: 20px;
-    border-radius: 20px;
-    background: rgba(255,255,255,0.05);
-    backdrop-filter: blur(10px);
-    animation: fadeIn 1.5s ease-in-out;
-}
-
-@keyframes fadeIn {
-    from {opacity: 0;}
-    to {opacity: 1;}
-}
-
-.equalizer {
-  display: flex;
-  justify-content: center;
-  margin-top: 20px;
-}
-
-.bar {
-  width: 5px;
-  height: 30px;
-  margin: 3px;
-  background: #ff00cc;
-  animation: bounce 1s infinite ease-in-out;
-}
-
-.bar:nth-child(2) { animation-delay: 0.2s; }
-.bar:nth-child(3) { animation-delay: 0.4s; }
-.bar:nth-child(4) { animation-delay: 0.6s; }
-.bar:nth-child(5) { animation-delay: 0.8s; }
-
-@keyframes bounce {
-  0%, 100% { height: 20px; }
-  50% { height: 60px; }
-}
-
-</style>
-""", unsafe_allow_html=True)
-
-# ---------------- TITLE ----------------
-st.markdown("<div class='title'>🎵 RPM Lyrics Studio</div>", unsafe_allow_html=True)
-st.markdown("### Experience lyrics in motion ✨")
-
-# ---------------- THEME SELECTOR ----------------
-theme = st.selectbox("🎨 Choose Mood Theme",
-                     ["Neon Club (Pop)", "Retro Jazz", "Rock Fire"])
-
-if theme == "Retro Jazz":
-    st.markdown("""
-    <style>
-    body { background: linear-gradient(to bottom right, #000000, #3b0066); }
-    .bar { background: gold; }
-    </style>
-    """, unsafe_allow_html=True)
-
-elif theme == "Rock Fire":
-    st.markdown("""
-    <style>
-    body { background: linear-gradient(to bottom right, #000000, #4b0000); }
-    .bar { background: orange; }
-    </style>
-    """, unsafe_allow_html=True)
-
-# ---------------- SEARCH SECTION ----------------
-song_title = st.text_input("🎶 Enter Song Name")
-artist_name = st.text_input("🎤 Enter Artist Name")
-
-if st.button("✨ Fetch Lyrics"):
-
-    if not song_title.strip():
-        st.warning("⚠ Please enter a song name.")
+    if not song_name:
+        st.warning("Please enter a song name.")
         st.stop()
 
-    try:
-        with st.spinner("Searching the Genius universe..."):
-            song = genius.search_song(song_title.strip(), artist_name.strip())
+    with st.spinner("Fetching lyrics..."):
 
-        if song and song.lyrics:
-            st.success("Lyrics Found! 🎉")
+        try:
+            song = genius.search_song(song_name, artist_name)
 
-            lyrics_lines = song.lyrics.split("\n")
+            if song is None:
+                st.warning("Song not found on Genius.")
+            else:
+                st.success("Lyrics fetched successfully!")
+                st.text_area("Lyrics", song.lyrics, height=400)
 
-            lyrics_html = "<div class='lyrics-box'>"
-            for line in lyrics_lines:
-                lyrics_html += f"<p>{line}</p>"
-            lyrics_html += "</div>"
+        except requests.exceptions.HTTPError as http_err:
+            if http_err.response.status_code == 401:
+                st.error("❌ Invalid Genius API Key.")
+            elif http_err.response.status_code == 429:
+                st.error("⚠ API rate limit reached. Please try again later.")
+            elif http_err.response.status_code == 403:
+                st.error("❌ Access forbidden. Genius may be blocking cloud requests.")
+            else:
+                st.error("HTTP error occurred.")
 
-            st.markdown(lyrics_html, unsafe_allow_html=True)
+        except requests.exceptions.Timeout:
+            st.error("⏳ Request timed out. Please try again.")
 
-            st.markdown("""
-            <div class="equalizer">
-                <div class="bar"></div>
-                <div class="bar"></div>
-                <div class="bar"></div>
-                <div class="bar"></div>
-                <div class="bar"></div>
-            </div>
-            """, unsafe_allow_html=True)
+        except Exception:
+            st.error("""
+Unable to fetch lyrics right now.
 
-        else:
-            st.error("❌ Song not found. Try different keywords.")
-
-    except Exception:
-        st.error("⚠ Unable to fetch lyrics right now.")
-        st.info("Possible reasons:")
-        st.write("- API rate limit reached")
-        st.write("- Song not available on Genius")
-        st.write("- Temporary API issue")
-
-# ---------------- FOOTER ----------------
-st.markdown("---")
-st.markdown("Built by Rudraksh,Priyanshu and Mridul")
+Possible reasons:
+• API rate limit reached  
+• Song not available on Genius  
+• Temporary API issue  
+• Genius blocking cloud server
+""")
